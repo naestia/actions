@@ -111,7 +111,23 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN }}   # PAT with write:packages
 
+      # Don't rebuild/overwrite an image that already exists (e.g. a manual
+      # re-trigger of the same commit). The callback below still reports the
+      # version + succeeded, so Cent records it as done.
+      - name: Check if the tag already exists
+        id: exists
+        env:
+          REF: ${{ steps.t.outputs.image }}:${{ steps.ver.outputs.version }}
+        run: |
+          if docker manifest inspect "$REF" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "$REF already exists — skipping build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push image to GHCR
+        if: steps.exists.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: ${{ inputs.context }}
@@ -127,8 +143,9 @@ jobs:
           CALLBACK: ${{ inputs.cent_callback_url }}
           TOKEN: ${{ secrets.CENT_API_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           curl -fsS -X POST "$CALLBACK" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"status\":\"${STATUS}\",\"external_url\":\"${RUN_URL}\"}"
+            -d "{\"status\":\"${STATUS}\",\"version\":\"${VERSION}\",\"external_url\":\"${RUN_URL}\"}"

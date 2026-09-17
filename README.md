@@ -29,7 +29,9 @@ push to an app repo (e.g. naestia/mira)
 
 - **`build.yml`** — the reusable build/push workflow. Computes a version
   (develop → `<default_branch>.minor+1.0-rc.N`, else the `package.json` version) and
-  builds + pushes `ghcr.io/<owner>/<name>:<version>`. Inputs (sent by Cent):
+  builds + pushes `ghcr.io/<owner>/<name>:<version>` — but **skips the build if that
+  tag already exists** (e.g. a re-trigger of the same commit), still reporting the
+  version + `succeeded` back to Cent. Inputs (sent by Cent):
   `target_repo`, `target_ref`, `target_sha`, `cent_deployment_id`,
   `cent_callback_url`, **`default_branch`** (the app's release/base branch, set per
   repo on the Pipelines tab), and an **optional `context`** (Docker build context,

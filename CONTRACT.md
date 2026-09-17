@@ -40,11 +40,16 @@ result:
           curl -fsS -X POST "${{ inputs.cent_callback_url }}" \
             -H "Authorization: Bearer ${{ secrets.CENT_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "{\"status\":\"${STATUS}\",\"external_url\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
+            -d "{\"status\":\"${STATUS}\",\"version\":\"${VERSION}\",\"external_url\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
 ```
 
-`status` must be one of: `pending`, `running`, `succeeded`, `failed`,
-`rolled_back` (Cent's deployment statuses). `external_url` is optional.
+Body fields:
+- **`status`** (required) — one of `pending`, `running`, `succeeded`, `failed`,
+  `rolled_back` (Cent's deployment statuses).
+- **`version`** (optional) — the real version/tag you computed (e.g. an image
+  tag). Cent only knew the short SHA at dispatch, so this is what shows per
+  environment in the Services view. Omit or leave empty to keep the SHA.
+- **`external_url`** (optional) — a link to the run.
 
 ## Minimal compliant workflow
 
