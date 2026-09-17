@@ -32,6 +32,7 @@ on:
       cent_deployment_id: { description: "Cent deployment id (correlation)", required: true }
       cent_callback_url:  { description: "where to POST status back", required: true }
       context:            { description: "Docker build context (default: repo root)", required: false, default: "." }
+      default_branch:     { description: "the app's release/base branch for versioning", required: false, default: "master" }
 
 # The default GITHUB_TOKEN isn't used — we mint an App token scoped to the target.
 permissions: {}
@@ -75,23 +76,24 @@ jobs:
           fetch-depth: 0   # need full history to reach master + count commits
 
       # Compute the build version/tag from the app's version file (package.json).
-      #   develop   → RC: master's minor + 1, patch 0, -rc.N
-      #               N = develop commits since it diverged from master
-      #               e.g. master 1.1.0  →  1.2.0-rc.7
-      #   otherwise → the version file as-is (a release build, e.g. master 1.1.0)
-      # Assumes a Node app (package.json) on a `master` base branch — adapt the
-      # parse (or the branch name) for other stacks.
+      #   develop   → RC: <default_branch>'s minor + 1, patch 0, -rc.N
+      #               N = develop commits since it diverged from <default_branch>
+      #               e.g. default_branch 1.1.0  →  1.2.0-rc.7
+      #   otherwise → the version file as-is (a release build)
+      # Assumes a Node app (package.json). The base branch is the `default_branch`
+      # input (default "master"); adapt the parse for other stacks.
       - name: Compute version
         id: ver
         env:
           REF: ${{ inputs.target_ref }}
+          DEFAULT_BRANCH: ${{ inputs.default_branch }}
         run: |
-          git fetch --no-tags origin '+refs/heads/master:refs/remotes/origin/master'
+          git fetch --no-tags origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
           if [ "$REF" = "develop" ]; then
-            base=$(git show origin/master:package.json | jq -r .version)   # e.g. 1.1.0
+            base=$(git show "origin/${DEFAULT_BRANCH}:package.json" | jq -r .version)   # e.g. 1.1.0
             IFS=. read -r major minor _ <<< "${base%%-*}"
-            n=$(git rev-list --count origin/master..HEAD)                  # develop commits since master
-            version="${major}.$((minor + 1)).0-rc.${n}"                    # e.g. 1.2.0-rc.7
+            n=$(git rev-list --count "origin/${DEFAULT_BRANCH}..HEAD")                   # develop commits since ${DEFAULT_BRANCH}
+            version="${major}.$((minor + 1)).0-rc.${n}"                                  # e.g. 1.2.0-rc.7
           else
             version=$(jq -r .version package.json)
           fi

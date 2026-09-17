@@ -28,11 +28,12 @@ push to an app repo (e.g. naestia/mira)
 ## Workflows
 
 - **`build.yml`** — the reusable build/push workflow. Computes a version
-  (develop → `master.minor+1.0-rc.N`, else the `package.json` version) and builds +
-  pushes `ghcr.io/<owner>/<name>:<version>`. Inputs (sent by Cent): `target_repo`,
-  `target_ref`, `target_sha`, `cent_deployment_id`, `cent_callback_url`, and an
-  **optional `context`** (Docker build context, default repo root — a rule can
-  override it per repo).
+  (develop → `<default_branch>.minor+1.0-rc.N`, else the `package.json` version) and
+  builds + pushes `ghcr.io/<owner>/<name>:<version>`. Inputs (sent by Cent):
+  `target_repo`, `target_ref`, `target_sha`, `cent_deployment_id`,
+  `cent_callback_url`, **`default_branch`** (the app's release/base branch, set per
+  repo on the Pipelines tab), and an **optional `context`** (Docker build context,
+  default repo root — a rule can override it per repo).
 
 Add more (e.g. `deploy.yml`, `migrate.yml`) using the same `workflow_dispatch` +
 inputs shape; each becomes an action Cent can dispatch.
