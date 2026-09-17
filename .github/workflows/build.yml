@@ -11,8 +11,14 @@
 #
 # Repo secrets required:
 #   APP_ID           — the GitHub App's id (same App Cent uses)
-#   APP_PRIVATE_KEY  — the App's private key (PEM) — mints a token to check out the target
+#   APP_PRIVATE_KEY  — the App's private key (PEM) — mints a token to check out + push
 #   CENT_API_TOKEN   — must equal Cent's CENT_API_TOKEN (for the status callback)
+#
+# The GitHub App must have: Contents: read (checkout) and Packages: write (push to
+# GHCR), and be installed on the target app repos.
+#
+# Builds and pushes ghcr.io/<owner>/<name>:<version>. Optional `context` input
+# (default ".") sets the Docker build context; a rule can override it per repo.
 
 name: build
 run-name: "build ${{ inputs.target_repo }}@${{ inputs.target_sha }} (dep ${{ inputs.cent_deployment_id }})"
@@ -25,6 +31,7 @@ on:
       target_sha:         { description: "exact commit to check out", required: true }
       cent_deployment_id: { description: "Cent deployment id (correlation)", required: true }
       cent_callback_url:  { description: "where to POST status back", required: true }
+      context:            { description: "Docker build context (default: repo root)", required: false, default: "." }
 
 # The default GITHUB_TOKEN isn't used — we mint an App token scoped to the target.
 permissions: {}
@@ -45,6 +52,8 @@ jobs:
         run: |
           echo "owner=${TARGET%%/*}" >> "$GITHUB_OUTPUT"
           echo "name=${TARGET#*/}"   >> "$GITHUB_OUTPUT"
+          # GHCR requires a lowercase image name.
+          echo "image=$(echo "ghcr.io/$TARGET" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       # Mint an installation token scoped to just the target repo (needs the App
       # installed on it with contents:read).
@@ -63,15 +72,45 @@ jobs:
           repository: ${{ inputs.target_repo }}
           ref: ${{ inputs.target_sha }}
           token: ${{ steps.apptoken.outputs.token }}
+          fetch-depth: 0   # need full history to reach master + count commits
 
-      # ---- Replace this with the real build/deploy for the target ----
-      - name: Build & deploy
+      # Compute the build version/tag from the app's version file (package.json).
+      #   develop   → RC: master's minor + 1, patch 0, -rc.N
+      #               N = develop commits since it diverged from master
+      #               e.g. master 1.1.0  →  1.2.0-rc.7
+      #   otherwise → the version file as-is (a release build, e.g. master 1.1.0)
+      # Assumes a Node app (package.json) on a `master` base branch — adapt the
+      # parse (or the branch name) for other stacks.
+      - name: Compute version
+        id: ver
         env:
-          TARGET: ${{ inputs.target_repo }}
-          SHA: ${{ inputs.target_sha }}
+          REF: ${{ inputs.target_ref }}
         run: |
-          echo "Building $TARGET @ $SHA"
-          # e.g. docker build/push, ssh deploy, kubectl apply, fly deploy, ...
+          git fetch --no-tags origin '+refs/heads/master:refs/remotes/origin/master'
+          if [ "$REF" = "develop" ]; then
+            base=$(git show origin/master:package.json | jq -r .version)   # e.g. 1.1.0
+            IFS=. read -r major minor _ <<< "${base%%-*}"
+            n=$(git rev-list --count origin/master..HEAD)                  # develop commits since master
+            version="${major}.$((minor + 1)).0-rc.${n}"                    # e.g. 1.2.0-rc.7
+          else
+            version=$(jq -r .version package.json)
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Build version: $version"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ steps.t.outputs.owner }}
+          password: ${{ steps.apptoken.outputs.token }}   # App token — needs Packages: write
+
+      - name: Build and push image to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          push: true
+          tags: ${{ steps.t.outputs.image }}:${{ steps.ver.outputs.version }}
 
       # Always tell Cent how it went (success or failure) so the Deployments log
       # + Services view reflect the real outcome.
