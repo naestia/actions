@@ -1,0 +1,89 @@
+# Reusable build/deploy workflow — the central "actions" collection Cent dispatches.
+#
+# Cent triggers this via the GitHub API (workflow_dispatch), passing the target
+# app repo + commit and a correlation id. This workflow runs HERE, checks out the
+# TARGET repo using a short-lived GitHub App token, builds/deploys it, and POSTs
+# the result back to Cent.
+#
+# App repos need no workflow of their own — GitHub sends Cent the push webhook,
+# Cent decides, Cent dispatches this. Add more workflows next to this one
+# (deploy.yml, migrate.yml, …) for other actions Cent can dispatch.
+#
+# Repo secrets required:
+#   APP_ID           — the GitHub App's id (same App Cent uses)
+#   APP_PRIVATE_KEY  — the App's private key (PEM) — mints a token to check out the target
+#   CENT_API_TOKEN   — must equal Cent's CENT_API_TOKEN (for the status callback)
+
+name: build
+run-name: "build ${{ inputs.target_repo }}@${{ inputs.target_sha }} (dep ${{ inputs.cent_deployment_id }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_repo:        { description: "owner/repo to build", required: true }
+      target_ref:         { description: "branch that was pushed", required: true }
+      target_sha:         { description: "exact commit to check out", required: true }
+      cent_deployment_id: { description: "Cent deployment id (correlation)", required: true }
+      cent_callback_url:  { description: "where to POST status back", required: true }
+
+# The default GITHUB_TOKEN isn't used — we mint an App token scoped to the target.
+permissions: {}
+
+# Serialize deploys of the same target+ref; queue rather than cancel in-flight ones.
+concurrency:
+  group: build-${{ inputs.target_repo }}-${{ inputs.target_ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse target owner/name
+        id: t
+        env:
+          TARGET: ${{ inputs.target_repo }}
+        run: |
+          echo "owner=${TARGET%%/*}" >> "$GITHUB_OUTPUT"
+          echo "name=${TARGET#*/}"   >> "$GITHUB_OUTPUT"
+
+      # Mint an installation token scoped to just the target repo (needs the App
+      # installed on it with contents:read).
+      - name: Mint app token for the target repo
+        id: apptoken
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ steps.t.outputs.owner }}
+          repositories: ${{ steps.t.outputs.name }}
+
+      - name: Checkout the target app at the pushed commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.target_repo }}
+          ref: ${{ inputs.target_sha }}
+          token: ${{ steps.apptoken.outputs.token }}
+
+      # ---- Replace this with the real build/deploy for the target ----
+      - name: Build & deploy
+        env:
+          TARGET: ${{ inputs.target_repo }}
+          SHA: ${{ inputs.target_sha }}
+        run: |
+          echo "Building $TARGET @ $SHA"
+          # e.g. docker build/push, ssh deploy, kubectl apply, fly deploy, ...
+
+      # Always tell Cent how it went (success or failure) so the Deployments log
+      # + Services view reflect the real outcome.
+      - name: Report status to Cent
+        if: always()
+        env:
+          STATUS: ${{ job.status == 'success' && 'succeeded' || 'failed' }}
+          CALLBACK: ${{ inputs.cent_callback_url }}
+          TOKEN: ${{ secrets.CENT_API_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -fsS -X POST "$CALLBACK" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\":\"${STATUS}\",\"external_url\":\"${RUN_URL}\"}"
