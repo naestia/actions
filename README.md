@@ -50,15 +50,16 @@ Repo secrets (Settings → Secrets and variables → Actions):
 | `APP_ID` | The GitHub App id (the same App Cent authenticates as) |
 | `APP_PRIVATE_KEY` | The App's private key (PEM) — mints the token to check out targets |
 | `CENT_API_TOKEN` | Must equal Cent's `CENT_API_TOKEN` (authenticates the status callback) |
+| `GHCR_TOKEN` | A PAT with `write:packages` — pushes the built image to GHCR |
 
 Prerequisites:
 
 - The **GitHub App is installed** on this repo *and* on every app repo it builds,
   with **`contents: read`** (checkout); `actions: write` on this repo so Cent can
-  dispatch. The **GHCR push uses the run's `GITHUB_TOKEN`** (`packages: write` in the
-  workflow) — App installation tokens can't reliably create GHCR packages. *(The
-  image links to this actions repo; to link it to the app repo instead, push with a
-  PAT that has `write:packages`.)*
+  dispatch.
+- A **`GHCR_TOKEN`** secret — a PAT with `write:packages` — for the GHCR push.
+  Neither App installation tokens nor `GITHUB_TOKEN` can reliably create a package
+  in your namespace from a different repo, hence a PAT.
 - Each **app repo has a `Dockerfile`** at the build context (root by default; set
   the `context` input / rule input otherwise).
 - **Cent is reachable at the `cent_callback_url`** it sends (public HTTPS).
