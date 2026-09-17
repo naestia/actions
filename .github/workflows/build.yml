@@ -11,11 +11,14 @@
 #
 # Repo secrets required:
 #   APP_ID           — the GitHub App's id (same App Cent uses)
-#   APP_PRIVATE_KEY  — the App's private key (PEM) — mints a token to check out + push
+#   APP_PRIVATE_KEY  — the App's private key (PEM) — mints a token to check out the target
 #   CENT_API_TOKEN   — must equal Cent's CENT_API_TOKEN (for the status callback)
 #
-# The GitHub App must have: Contents: read (checkout) and Packages: write (push to
-# GHCR), and be installed on the target app repos.
+# The GitHub App needs Contents: read (checkout) and to be installed on the target
+# app repos. The GHCR push uses the run's GITHUB_TOKEN (packages: write above), not
+# the App token — App tokens can't reliably create GHCR packages. (The image ends
+# up linked to THIS repo; for it to link to the app repo instead, push with a PAT
+# that has write:packages.)
 #
 # Builds and pushes ghcr.io/<owner>/<name>:<version>. Optional `context` input
 # (default ".") sets the Docker build context; a rule can override it per repo.
@@ -34,8 +37,10 @@ on:
       context:            { description: "Docker build context (default: repo root)", required: false, default: "." }
       default_branch:     { description: "the app's release/base branch for versioning", required: false, default: "master" }
 
-# The default GITHUB_TOKEN isn't used — we mint an App token scoped to the target.
-permissions: {}
+# GITHUB_TOKEN is used only to push to GHCR — GitHub App installation tokens can't
+# reliably create GHCR packages. Checkout still uses the minted App token.
+permissions:
+  packages: write
 
 # Serialize deploys of the same target+ref; queue rather than cancel in-flight ones.
 concurrency:
@@ -104,8 +109,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ steps.t.outputs.owner }}
-          password: ${{ steps.apptoken.outputs.token }}   # App token — needs Packages: write
+          username: ${{ github.actor }}
+          password: ${{ github.token }}   # the run's GITHUB_TOKEN (packages: write)
 
       - name: Build and push image to GHCR
         uses: docker/build-push-action@v6

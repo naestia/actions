@@ -54,8 +54,11 @@ Repo secrets (Settings → Secrets and variables → Actions):
 Prerequisites:
 
 - The **GitHub App is installed** on this repo *and* on every app repo it builds,
-  with **`contents: read`** (checkout) + **`packages: write`** (push to GHCR);
-  `actions: write` on this repo so Cent can dispatch.
+  with **`contents: read`** (checkout); `actions: write` on this repo so Cent can
+  dispatch. The **GHCR push uses the run's `GITHUB_TOKEN`** (`packages: write` in the
+  workflow) — App installation tokens can't reliably create GHCR packages. *(The
+  image links to this actions repo; to link it to the app repo instead, push with a
+  PAT that has `write:packages`.)*
 - Each **app repo has a `Dockerfile`** at the build context (root by default; set
   the `context` input / rule input otherwise).
 - **Cent is reachable at the `cent_callback_url`** it sends (public HTTPS).
