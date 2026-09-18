@@ -1,0 +1,64 @@
+# Environment probe (ECS example) — reports the version ACTUALLY running in an
+# environment back to Cent. Cent dispatches this when you hit "Refresh running
+# version"; it reads the running image tag from the real environment and POSTs it
+# to Cent's env-status endpoint. Cent stays cloud-agnostic — the AWS specifics
+# live here. Copy + adapt for k8s / Fly / wherever you run.
+#
+# Repo secrets required:
+#   AWS_ROLE_ARN (or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) — read-only ECS
+#   CENT_API_TOKEN — must equal Cent's CENT_API_TOKEN (authorizes the report)
+#
+# Cent sends: target_repo, environment, cent_callback_url. Report body to Cent:
+#   {"environment": "<env>", "version": "<tag>", "source": "ecs"}
+
+name: probe-ecs
+run-name: "probe ${{ inputs.target_repo }} / ${{ inputs.environment }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_repo:       { description: "owner/repo being probed", required: true }
+      environment:       { description: "environment to read (e.g. develop)", required: true }
+      cent_callback_url: { description: "where to POST the running version", required: true }
+
+permissions:
+  id-token: write   # for OIDC role assumption (drop if you use access keys)
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-1
+
+      # Convention: cluster = app name, service = "<app>-<environment>".
+      # Adjust to however your ECS services are named/looked up.
+      - name: Read the running image tag from ECS
+        id: ecs
+        env:
+          TARGET: ${{ inputs.target_repo }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          name=${TARGET#*/}
+          cluster="$name"
+          service="${name}-${ENVIRONMENT}"
+          taskdef=$(aws ecs describe-services --cluster "$cluster" --services "$service" \
+            --query 'services[0].taskDefinition' --output text)
+          image=$(aws ecs describe-task-definition --task-definition "$taskdef" \
+            --query 'taskDefinition.containerDefinitions[0].image' --output text)
+          echo "version=${image##*:}" >> "$GITHUB_OUTPUT"   # ghcr.io/…:0.3.0-rc.8 → 0.3.0-rc.8
+
+      - name: Report running version to Cent
+        env:
+          CALLBACK: ${{ inputs.cent_callback_url }}
+          TOKEN: ${{ secrets.CENT_API_TOKEN }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          VERSION: ${{ steps.ecs.outputs.version }}
+        run: |
+          curl -fsS -X POST "$CALLBACK" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"environment\":\"${ENVIRONMENT}\",\"version\":\"${VERSION}\",\"source\":\"ecs\"}"

@@ -50,6 +50,12 @@ Body fields:
   tag). Cent only knew the short SHA at dispatch, so this is what shows per
   environment in the Services view. Omit or leave empty to keep the SHA.
 - **`external_url`** (optional) — a link to the run.
+- **`signal`** (optional) — a name you choose to announce that this run finished
+  (e.g. `build-service`). On `succeeded`, Cent arms any **arm rule** of this service
+  whose "Arm when" is set to **on signal** with the *same name* — making that
+  commit ready for a human to Deploy. It's a pure name match, set independently
+  here and on the Cent rule; Cent never interprets what the run did. Omit or leave
+  empty for no signal.
 
 ## Minimal compliant workflow
 
@@ -89,6 +95,28 @@ jobs:
 ```
 
 `build.yml` in this repo is the reference implementation.
+
+## Probe workflows (environment status)
+
+A **probe** reports the version *actually running* in an environment — Cent
+dispatches it on "Refresh running version" and compares it to what was built.
+Cent sends a smaller input set (no commit/deployment):
+
+| input | value |
+| --- | --- |
+| `target_repo` | `owner/repo` being probed |
+| `environment` | the environment to read (e.g. `develop`) |
+| `cent_callback_url` | where to POST the running version |
+
+The probe reads the running version from the real environment (it has the cloud
+creds — Cent doesn't) and POSTs it back (bearer `CENT_API_TOKEN`):
+
+```json
+{ "environment": "develop", "version": "0.3.0-rc.8", "source": "ecs" }
+```
+
+`probe-ecs.yml` is a reference implementation (ECS). Configure a service's probe
+(actions repo + workflow) on the Pipelines tab's Edit form.
 
 > Note on custom inputs: because GitHub requires every dispatch input to be
 > declared, truly "free-form" rule inputs mean editing this workflow to declare

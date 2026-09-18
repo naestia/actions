@@ -37,6 +37,11 @@ push to an app repo (e.g. naestia/mira)
   repo on the Pipelines tab), and an **optional `context`** (Docker build context,
   default repo root — a rule can override it per repo).
 
+- **`probe-ecs.yml`** — an environment **probe**: Cent dispatches it on "Refresh
+  running version"; it reads the running image tag from ECS and reports it back so
+  Cent can show built-vs-running drift. Inputs: `target_repo`, `environment`,
+  `cent_callback_url`. Copy + adapt for other platforms.
+
 Add more (e.g. `deploy.yml`, `migrate.yml`) using the same `workflow_dispatch` +
 inputs shape; each becomes an action Cent can dispatch.
 

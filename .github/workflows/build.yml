@@ -35,6 +35,11 @@ on:
       cent_callback_url:  { description: "where to POST status back", required: true }
       context:            { description: "Docker build context (default: repo root)", required: false, default: "." }
       default_branch:     { description: "the app's release/base branch for versioning", required: false, default: "master" }
+      # Optional: report a signal name to Cent on success. A Cent arm rule set to
+      # "arm when: on signal" with the SAME name is then armed with this commit —
+      # letting a human Deploy it. Leave empty to report no signal. Cent does not
+      # send this; you choose the name here and on the matching arm rule.
+      signal:             { description: "signal name to report to Cent on success (couples to an arm-on-signal rule)", required: false, default: "" }
 
 # Checkout uses the App token; the GHCR push uses a PAT (GHCR_TOKEN). Neither the
 # App installation token nor GITHUB_TOKEN can reliably create a package in your
@@ -144,8 +149,11 @@ jobs:
           TOKEN: ${{ secrets.CENT_API_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           VERSION: ${{ steps.ver.outputs.version }}
+          SIGNAL: ${{ inputs.signal }}
         run: |
+          # An empty signal is ignored by Cent; a non-empty one (on success) arms
+          # any arm-on-signal rule of this service listening for that name.
           curl -fsS -X POST "$CALLBACK" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"status\":\"${STATUS}\",\"version\":\"${VERSION}\",\"external_url\":\"${RUN_URL}\"}"
+            -d "{\"status\":\"${STATUS}\",\"version\":\"${VERSION}\",\"external_url\":\"${RUN_URL}\",\"signal\":\"${SIGNAL}\"}"
