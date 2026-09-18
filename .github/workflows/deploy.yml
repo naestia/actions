@@ -1,0 +1,66 @@
+# Mock deploy workflow — for testing Cent's arm → Deploy chain end to end.
+#
+# Cent dispatches this (workflow_dispatch) when a human clicks Deploy on an arm
+# rule. It deploys NOTHING real: it runs a mock step, then reports the outcome
+# back to Cent so the deployment flips to `succeeded` and the Services view shows
+# a version for the environment. Follows the Cent workflow contract (CONTRACT.md).
+#
+# Required secret: CENT_API_TOKEN (must equal Cent's CENT_API_TOKEN) — used to
+# authenticate the status callback.
+
+name: deploy (mock)
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Cent always sends these five (the contract).
+      target_repo:        { description: "owner/repo being deployed", required: true }
+      target_ref:         { description: "branch", required: true }
+      target_sha:         { description: "commit to deploy", required: true }
+      cent_deployment_id: { description: "Cent deployment id (correlation)", required: true }
+      cent_callback_url:  { description: "where to POST status back", required: true }
+      # Cent also sends default_branch (always) and environment (when the rule has
+      # an env label). Declare both or GitHub 422s on the dispatch.
+      default_branch:     { description: "release/base branch", required: false, default: "master" }
+      environment:        { description: "Cent environment label", required: false, default: "" }
+
+# Handy in the Actions list and lets Cent correlate the run by deployment id.
+run-name: deploy ${{ inputs.target_repo }}@${{ inputs.target_sha }} → ${{ inputs.environment || inputs.target_ref }} (cent ${{ inputs.cent_deployment_id }})
+
+# The mock touches nothing — no repo, packages, or cloud access needed.
+permissions: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mock deploy
+        env:
+          REPO: ${{ inputs.target_repo }}
+          REF: ${{ inputs.target_ref }}
+          SHA: ${{ inputs.target_sha }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          echo "::group::Mock deploy"
+          echo "Would deploy ${REPO}@${SHA} (${REF}) to '${ENVIRONMENT:-<none>}'"
+          echo "No real infrastructure is touched — this is a stand-in."
+          sleep 3
+          echo "Done (mock)."
+          echo "::endgroup::"
+
+      - name: Report status to Cent
+        if: always()
+        env:
+          STATUS: ${{ job.status == 'success' && 'succeeded' || 'failed' }}
+          CALLBACK: ${{ inputs.cent_callback_url }}
+          TOKEN: ${{ secrets.CENT_API_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ inputs.target_sha }}
+        run: |
+          # Report the short sha as the "version" so the Services view shows what's
+          # running in this environment; a real deploy would report the released tag.
+          SHORT="${SHA:0:7}"
+          curl -fsS -X POST "$CALLBACK" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\":\"${STATUS}\",\"version\":\"${SHORT}\",\"external_url\":\"${RUN_URL}\"}"
