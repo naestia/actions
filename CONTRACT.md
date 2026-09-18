@@ -20,6 +20,9 @@ Declare all five under `on: workflow_dispatch: inputs:`:
 
 ## Conditional inputs
 
+- **`default_branch`** — sent whenever the service has a default branch set
+  (it always does — defaults to `master`). Declare it (with a `default`) in any
+  workflow Cent dispatches.
 - **`environment`** — sent whenever the rule has an env label set. Declare it
   (with a `default`) if any rule pointing at this workflow uses an env label.
 - **Custom rule inputs** — any extra `key=value` you set on a rule are sent as

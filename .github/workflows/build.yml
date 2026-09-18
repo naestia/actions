@@ -35,6 +35,9 @@ on:
       cent_callback_url:  { description: "where to POST status back", required: true }
       context:            { description: "Docker build context (default: repo root)", required: false, default: "." }
       default_branch:     { description: "the app's release/base branch for versioning", required: false, default: "master" }
+      # Cent sends this whenever the rule has an environment label set. Declare it
+      # (even if unused) or GitHub rejects the dispatch: 422 "Unexpected inputs".
+      environment:        { description: "Cent environment label for this deploy (tracking)", required: false, default: "" }
       # Optional: report a signal name to Cent on success. A Cent arm rule set to
       # "arm when: on signal" with the SAME name is then armed with this commit —
       # letting a human Deploy it. Leave empty to report no signal. Cent does not
