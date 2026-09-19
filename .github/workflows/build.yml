@@ -154,9 +154,15 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
           SIGNAL: ${{ inputs.signal }}
         run: |
+          # Report the computed tag as a labelled detail: `build-tag=<version>`.
+          # Cent shows key=value details as a labelled row per environment. Skip it
+          # when there's no version (e.g. the build failed before computing one) —
+          # an empty details string leaves Cent's existing value untouched.
+          DETAILS=""
+          [ -n "$VERSION" ] && DETAILS="build-tag=$VERSION"
           # An empty signal is ignored by Cent; a non-empty one (on success) arms
           # any arm-on-signal rule of this service listening for that name.
           curl -fsS -X POST "$CALLBACK" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"status\":\"${STATUS}\",\"version\":\"${VERSION}\",\"external_url\":\"${RUN_URL}\",\"signal\":\"${SIGNAL}\"}"
+            -d "{\"status\":\"${STATUS}\",\"details\":\"${DETAILS}\",\"external_url\":\"${RUN_URL}\",\"signal\":\"${SIGNAL}\"}"

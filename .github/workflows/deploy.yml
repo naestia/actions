@@ -57,10 +57,10 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           SHA: ${{ inputs.target_sha }}
         run: |
-          # Report the short sha as the "version" so the Services view shows what's
-          # running in this environment; a real deploy would report the released tag.
+          # `details` is a free-form label Cent just displays (here, the short sha);
+          # a real deploy might report the released tag or environment endpoint.
           SHORT="${SHA:0:7}"
           curl -fsS -X POST "$CALLBACK" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"status\":\"${STATUS}\",\"version\":\"${SHORT}\",\"external_url\":\"${RUN_URL}\"}"
+            -d "{\"status\":\"${STATUS}\",\"details\":\"${SHORT}\",\"external_url\":\"${RUN_URL}\"}"

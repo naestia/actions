@@ -43,15 +43,21 @@ result:
           curl -fsS -X POST "${{ inputs.cent_callback_url }}" \
             -H "Authorization: Bearer ${{ secrets.CENT_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "{\"status\":\"${STATUS}\",\"version\":\"${VERSION}\",\"external_url\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
+            -d "{\"status\":\"${STATUS}\",\"details\":\"${DETAILS}\",\"external_url\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
 ```
 
 Body fields:
 - **`status`** (required) — one of `pending`, `running`, `succeeded`, `failed`,
   `rolled_back` (Cent's deployment statuses).
-- **`version`** (optional) — the real version/tag you computed (e.g. an image
-  tag). Cent only knew the short SHA at dispatch, so this is what shows per
-  environment in the Services view. Omit or leave empty to keep the SHA.
+- **`details`** (optional) — a **free-form** label of your choosing (an image tag,
+  a version, a note — anything). Cent treats it opaquely and shows it per
+  environment in the Services view. Cent only knew the short SHA at dispatch, so
+  this replaces it. Omit or leave empty to keep the SHA.
+  - **Key/value form:** if you write `key=value` entries separated by `;` or
+    newlines, e.g. `details: "version=1.4.0; image=ghcr.io/acme/app:1.4.0; region=eu-north-1"`,
+    the service's **Environments** card renders them as a labelled list. A plain
+    string (no `=`) shows as a single value. It's still just a string to Cent —
+    this is display sugar only.
 - **`external_url`** (optional) — a link to the run.
 - **`signal`** (optional) — a name you choose to announce that this run finished
   (e.g. `build-service`). On `succeeded`, Cent arms any **arm rule** of this service
