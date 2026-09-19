@@ -27,8 +27,10 @@ push to an app repo (e.g. naestia/mira)
 
 ## Workflows
 
-- **`build.yml`** — the reusable build/push workflow. Computes a version
-  (develop → `<default_branch>.minor+1.0-rc.N`, else the `package.json` version) and
+- **`build.yml`** — the reusable build/push workflow. Computes a version from the
+  repo's **`package.json` (`version` field) or a plain `.version` file** (Node and
+  non-Node repos both work; package.json wins if both exist)
+  (develop → `<default_branch>.minor+1.0-rc.N`, else that version as-is) and
   builds + pushes `ghcr.io/<owner>/<name>:<version>` — but **skips the build if that
   tag already exists** (e.g. a re-trigger of the same commit), still reporting the
   tag (as `details`) + `succeeded` back to Cent. Inputs (sent by Cent):

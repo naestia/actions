@@ -87,27 +87,54 @@ jobs:
           token: ${{ steps.apptoken.outputs.token }}
           fetch-depth: 0   # need full history to reach master + count commits
 
-      # Compute the build version/tag from the app's version file (package.json).
+      # Compute the build version/tag from the app's version file — either a Node
+      # package.json ("version" field) OR a plain-text .version file (package.json
+      # preferred, .version used as a fallback), so this works for Node and
+      # non-Node repos alike.
       #   develop   → RC: <default_branch>'s minor + 1, patch 0, -rc.N
       #               N = develop commits since it diverged from <default_branch>
       #               e.g. default_branch 1.1.0  →  1.2.0-rc.7
-      #   otherwise → the version file as-is (a release build)
-      # Assumes a Node app (package.json). The base branch is the `default_branch`
-      # input (default "master"); adapt the parse for other stacks.
+      #   otherwise → the version as-is (a release build, e.g. master)
+      # The base branch is the `default_branch` input (default "master").
       - name: Compute version
         id: ver
         env:
           REF: ${{ inputs.target_ref }}
           DEFAULT_BRANCH: ${{ inputs.default_branch }}
         run: |
-          git fetch --no-tags origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+          # Read a version from a git location ($1 like "origin/master:") or, when
+          # $1 is empty, from the checked-out working tree. Prefers package.json's
+          # "version"; falls back to a .version file.
+          read_version() {
+            local at="$1" v=""
+            if [ -n "$at" ]; then
+              v=$(git show "${at}package.json" 2>/dev/null | jq -r '.version' 2>/dev/null) || true
+              if [ -z "$v" ] || [ "$v" = "null" ]; then
+                v=$(git show "${at}.version" 2>/dev/null | tr -d '[:space:]') || true
+              fi
+            elif [ -f package.json ]; then
+              v=$(jq -r '.version' package.json)
+            elif [ -f .version ]; then
+              v=$(tr -d '[:space:]' < .version)
+            fi
+            printf '%s' "$v"
+          }
+
           if [ "$REF" = "develop" ]; then
-            base=$(git show "origin/${DEFAULT_BRANCH}:package.json" | jq -r .version)   # e.g. 1.1.0
+            git fetch --no-tags origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+            base=$(read_version "origin/${DEFAULT_BRANCH}:")                              # e.g. 1.1.0
+            if [ -z "$base" ] || [ "$base" = "null" ]; then
+              echo "::error::no version on ${DEFAULT_BRANCH} (need package.json \"version\" or a .version file)"; exit 1
+            fi
             IFS=. read -r major minor _ <<< "${base%%-*}"
-            n=$(git rev-list --count "origin/${DEFAULT_BRANCH}..HEAD")                   # develop commits since ${DEFAULT_BRANCH}
-            version="${major}.$((minor + 1)).0-rc.${n}"                                  # e.g. 1.2.0-rc.7
+            n=$(git rev-list --count "origin/${DEFAULT_BRANCH}..HEAD")                    # develop commits since ${DEFAULT_BRANCH}
+            version="${major}.$((minor + 1)).0-rc.${n}"                                   # e.g. 1.2.0-rc.7
           else
-            version=$(jq -r .version package.json)
+            version=$(read_version "")
+          fi
+
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            echo "::error::could not determine version — add a package.json \"version\" or a .version file"; exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Build version: $version"
