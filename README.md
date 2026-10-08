@@ -9,10 +9,10 @@ Cent triggers to build/deploy *other* repos.
 
 ```
 push to an app repo (e.g. naestia/mira)
-   └─▶ GitHub App emits a push webhook to Cent
+   └─▶ an org webhook sends the push to Cent
           └─▶ Cent decides what to do (its push policy)
                  └─▶ workflow_dispatch  →  this repo's build.yml
-                        • mints a GitHub App token scoped to the target repo
+                        • checks out with TARGET_CHECKOUT_TOKEN (no GitHub App)
                         • checks out the target repo @ the pushed commit
                         • builds / deploys it
                         • POSTs status back to Cent (Deployments + Services update)
@@ -20,9 +20,10 @@ push to an app repo (e.g. naestia/mira)
 
 - App repos need **no workflow files** — the trigger is the native push webhook →
   Cent → dispatch. Cent is the control point.
-- These workflows reach into other repos via a short-lived **GitHub App
-  installation token** scoped to the target. "Repos it has access to" = repos the
-  App is installed on (with `contents: read`).
+- These workflows reach into other repos with **`TARGET_CHECKOUT_TOKEN`**, a
+  fine-grained PAT (machine account) with `contents: read` on the app repos. No
+  GitHub App is needed. (While that secret is missing, `build.yml` falls back to
+  the old App token.)
 - Cent picks the driver + inputs; the workflow just does the work and reports back.
 
 ## Workflows
@@ -56,16 +57,17 @@ Repo secrets (Settings → Secrets and variables → Actions):
 
 | Secret | What |
 | --- | --- |
-| `APP_ID` | The GitHub App id (the same App Cent authenticates as) |
-| `APP_PRIVATE_KEY` | The App's private key (PEM) — mints the token to check out targets |
+| `TARGET_CHECKOUT_TOKEN` | Fine-grained PAT (machine account), `Contents: read` on the app repos — checks out targets |
+| `APP_ID`, `APP_PRIVATE_KEY` | *Legacy, optional:* only used while `TARGET_CHECKOUT_TOKEN` is unset |
 | `CENT_API_TOKEN` | Must equal Cent's `CENT_API_TOKEN` (authenticates the status callback) |
 | `GHCR_TOKEN` | A PAT with `write:packages` — pushes the built image to GHCR |
 
 Prerequisites:
 
-- The **GitHub App is installed** on this repo *and* on every app repo it builds,
-  with **`contents: read`** (checkout); `actions: write` on this repo so Cent can
-  dispatch.
+- An **org webhook** (Pushes + Workflow runs) → Cent's
+  `/integrations/github/webhook`, with the secret Cent has as `GITHUB_WEBHOOK_SECRET`.
+- Cent runs in **token mode**: `GITHUB_ACCESS_TOKEN` = a fine-grained PAT with
+  `Actions: read/write` on this repo (dispatch + run status).
 - A **`GHCR_TOKEN`** secret — a PAT with `write:packages` — for the GHCR push.
   Neither App installation tokens nor `GITHUB_TOKEN` can reliably create a package
   in your namespace from a different repo, hence a PAT.

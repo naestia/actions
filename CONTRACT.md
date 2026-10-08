@@ -91,7 +91,7 @@ jobs:
         with:
           repository: ${{ inputs.target_repo }}
           ref: ${{ inputs.target_sha }}
-          token: ${{ steps.apptoken.outputs.token }}   # see build.yml for the App-token step
+          token: ${{ secrets.TARGET_CHECKOUT_TOKEN }}   # see build.yml (fine-grained PAT; App-token fallback while migrating)
       # ... do the work ...
       - name: Report status to Cent
         if: always()
