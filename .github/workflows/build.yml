@@ -2,22 +2,26 @@
 #
 # Cent triggers this via the GitHub API (workflow_dispatch), passing the target
 # app repo + commit and a correlation id. This workflow runs HERE, checks out the
-# TARGET repo using a short-lived GitHub App token, builds/deploys it, and POSTs
-# the result back to Cent.
+# TARGET repo with a token (see "Checkout credentials" below), builds/deploys it,
+# and POSTs the result back to Cent.
 #
 # App repos need no workflow of their own — GitHub sends Cent the push webhook,
 # Cent decides, Cent dispatches this. Add more workflows next to this one
 # (deploy.yml, migrate.yml, …) for other actions Cent can dispatch.
 #
 # Repo secrets required:
-#   APP_ID           — the GitHub App's id (same App Cent uses)
-#   APP_PRIVATE_KEY  — the App's private key (PEM) — mints a token to check out the target
-#   CENT_API_TOKEN   — must equal Cent's CENT_API_TOKEN (for the status callback)
-#   GHCR_TOKEN       — a PAT with write:packages (pushes the image to GHCR)
+#   TARGET_CHECKOUT_TOKEN — a fine-grained PAT (ideally a machine account's) with
+#                           Contents: read on the app repos — checks out the target.
+#                           No GitHub App needed.
+#   CENT_API_TOKEN        — must equal Cent's CENT_API_TOKEN (for the status callback)
+#   GHCR_TOKEN            — a PAT with write:packages (pushes the image to GHCR)
 #
-# The GitHub App needs Contents: read (checkout) and to be installed on the target
-# app repos. GHCR pushes use GHCR_TOKEN — neither App installation tokens nor
-# GITHUB_TOKEN can reliably create a package in your namespace from another repo.
+# Migration fallback: while TARGET_CHECKOUT_TOKEN isn't set, the workflow mints a
+# GitHub App token from APP_ID + APP_PRIVATE_KEY instead (the old setup). Once the
+# secret exists, the App secrets can be deleted and the App uninstalled.
+#
+# GHCR pushes use GHCR_TOKEN — neither App installation tokens nor GITHUB_TOKEN
+# can reliably create a package in your namespace from another repo.
 #
 # Builds and pushes ghcr.io/<owner>/<name>:<version>. Optional `context` input
 # (default ".") sets the Docker build context; a rule can override it per repo.
@@ -68,9 +72,25 @@ jobs:
           # GHCR requires a lowercase image name.
           echo "image=$(echo "ghcr.io/$TARGET" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      # Mint an installation token scoped to just the target repo (needs the App
-      # installed on it with contents:read).
-      - name: Mint app token for the target repo
+      # Checkout credentials: the TARGET_CHECKOUT_TOKEN secret (a fine-grained PAT,
+      # Contents: read on the app repos) — no GitHub App. Until that secret exists,
+      # fall back to minting a GitHub App token (APP_ID / APP_PRIVATE_KEY).
+      - name: Pick checkout credentials
+        id: cred
+        env:
+          CHECKOUT_TOKEN: ${{ secrets.TARGET_CHECKOUT_TOKEN }}
+        run: |
+          if [ -n "$CHECKOUT_TOKEN" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=app" >> "$GITHUB_OUTPUT"
+            echo "::notice::TARGET_CHECKOUT_TOKEN not set — falling back to the GitHub App token"
+          fi
+
+      # Fallback only: an App installation token scoped to just the target repo
+      # (needs the App installed on it with contents:read).
+      - name: Mint app token for the target repo (fallback)
+        if: steps.cred.outputs.mode == 'app'
         id: apptoken
         uses: actions/create-github-app-token@v1
         with:
@@ -84,7 +104,7 @@ jobs:
         with:
           repository: ${{ inputs.target_repo }}
           ref: ${{ inputs.target_sha }}
-          token: ${{ steps.apptoken.outputs.token }}
+          token: ${{ steps.cred.outputs.mode == 'token' && secrets.TARGET_CHECKOUT_TOKEN || steps.apptoken.outputs.token }}
           fetch-depth: 0   # need full history to reach master + count commits
 
       # Compute the build version/tag from the app's version file — either a Node
